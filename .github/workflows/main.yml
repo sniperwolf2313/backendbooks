@@ -1,0 +1,58 @@
+name: infra (Elastic Beanstalk)
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Prefijo para nombres"
+        required: true
+        default: "java-demo"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set TF_VAR
+        run: |
+          echo "TF_VAR_project=${{ github.event.inputs.project }}" >> $GITHUB_ENV
+          echo "TF_VAR_aws_region=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+
+      - name: Export outputs
+        id: tfout
+        run: |
+          echo "versions_bucket=$(terraform output -raw versions_bucket)" >> $GITHUB_OUTPUT
+          echo "app_name=$(terraform output -raw app_name)"           >> $GITHUB_OUTPUT
+          echo "env_name=$(terraform output -raw env_name)"           >> $GITHUB_OUTPUT
+          echo "env_url=$(terraform output -raw env_url)"             >> $GITHUB_OUTPUT
+
+      - name: Mostrar datos
+        run: |
+          echo "S3 versions bucket: ${{ steps.tfout.outputs.versions_bucket }}"
+          echo "EB app:             ${{ steps.tfout.outputs.app_name }}"
+          echo "EB env:             ${{ steps.tfout.outputs.env_name }}"
+          echo "EB URL:             ${{ steps.tfout.outputs.env_url }}"
